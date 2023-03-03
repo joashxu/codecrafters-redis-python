@@ -2,6 +2,20 @@ import socket
 
 BUFFER_SIZE = 1024
 
+class Buffer(object):
+    def __init__(self, sock):
+        self.sock = sock
+        self.buffer = b""
+
+    def get_line(self):
+        while b"\r\n" not in self.buffer:
+            data = self.sock.recv(BUFFER_SIZE)
+            if not data: # socket is closed
+                return None
+            self.buffer += data
+        line, sep, self.buffer = self.buffer.partition(b"\r\n")
+        return line.decode()
+    
 
 def parse_message(messages):
     if messages[0][0] != "*":
@@ -38,18 +52,22 @@ def serialize(result):
 def main():
     server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
     server_socket.listen()
-    serve_on = server_socket.accept() 
     
-    conn = serve_on[0]
-    data = conn.recv(BUFFER_SIZE)
+    conn, addr = server_socket.accept()
+    
+    with conn:
+        while True:
+            data = conn.recv(BUFFER_SIZE)
+            if not data:
+                break
 
-    message = data.decode("utf-8").split("\r\n")
-    command = parse_message(message)
-    result = process_command(command)
-    serialized_data = serialize(result)
+            message = data.decode("utf-8").split("\r\n")
+            command = parse_message(message)
+            result = process_command(command)
+            serialized_data = serialize(result)
 
-    conn.sendall(serialized_data)
-    conn.close()
+            conn.sendall(serialized_data)
+
     server_socket.close()
 
 

@@ -1,21 +1,15 @@
 import socket
+import selectors
+import types
 
+
+HOST = "localhost"
+PORT  = 6379
 BUFFER_SIZE = 1024
-
-class Buffer(object):
-    def __init__(self, sock):
-        self.sock = sock
-        self.buffer = b""
-
-    def get_line(self):
-        while b"\r\n" not in self.buffer:
-            data = self.sock.recv(BUFFER_SIZE)
-            if not data: # socket is closed
-                return None
-            self.buffer += data
-        line, sep, self.buffer = self.buffer.partition(b"\r\n")
-        return line.decode()
     
+
+sel = selectors.DefaultSelector()
+
 
 def parse_message(messages):
     if messages[0][0] != "*":
@@ -49,24 +43,57 @@ def serialize(result):
     return None
 
 
-def main():
-    server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
-    server_socket.listen()
-    
-    conn, addr = server_socket.accept()
-    
-    with conn:
-        while True:
-            data = conn.recv(BUFFER_SIZE)
-            if not data:
-                break
+def accept_connection(sock):
+    conn, addr = sock.accept()
+    print(f"Accepted connection from {addr}")
 
-            message = data.decode("utf-8").split("\r\n")
+    conn.setblocking(False)
+    data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
+    events = selectors.EVENT_READ | selectors.EVENT_WRITE
+    sel.register(conn, events, data=data)
+
+
+def serve_connection(key, mask):
+    sock = key.fileobj
+    data = key.data
+
+    if mask & selectors.EVENT_READ:
+        recv_data = sock.recv(BUFFER_SIZE)
+        if recv_data:
+            message = recv_data.decode("utf-8").split("\r\n")
             command = parse_message(message)
             result = process_command(command)
-            serialized_data = serialize(result)
+            data.outb = serialize(result)
+        else:
+            sel.unregister(sock)
+            sock.close()
 
-            conn.sendall(serialized_data)
+    if mask & selectors.EVENT_WRITE:
+        if data.outb:
+            sent = sock.send(data.outb)
+            data.outb = data.outb[sent:]
+
+def main():
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    server_socket.bind((HOST, PORT))
+    server_socket.listen()
+    server_socket.setblocking(False)
+
+    sel.register(server_socket, selectors.EVENT_READ, data=None)
+
+    try:
+        while True:
+            events = sel.select(timeout=None)
+            for key, mask in events:
+                if key.data is None:
+                    accept_connection(key.fileobj)
+                else:
+                    serve_connection(key, mask)
+    except KeyboardInterrupt:
+        print("Exiting Application")
+    finally:
+        sel.close()
 
     server_socket.close()
 

@@ -1,6 +1,8 @@
 import socket
 import selectors
 import types
+import threading
+import socketserver
 
 
 HOST = "localhost"
@@ -16,9 +18,13 @@ def parse_message(messages):
         return []
     
     result = []
-    msg_len = int(messages[0][1:])
+    msg_len = len(messages)
     i = 1
-    while i <= msg_len:
+    while i < msg_len:
+        if not messages[i]:
+            i += 1
+            continue
+
         if messages[i][0] == "$" and int(messages[i][1:]) > 0:
             result.append(messages[i + 1].strip())
             i += 1
@@ -26,26 +32,31 @@ def parse_message(messages):
             result.append(int(messages[i][1:]))
 
         i += 1
-
     return result
 
 def process_command(commands):
-    for command in commands:
-        if command.lower() == "ping":
-            return "PONG"
-        
+    if not commands:
+        return None
+    
+    if commands[0].lower() == "ping":
+        return "PONG"
+    elif commands[0].lower() == "echo":
+        if len(commands) == 1:
+            return ""
+        else:
+            return commands[1]
+
     return None
 
 
 def serialize(result):
     if isinstance(result, str):
-        return b"+" + bytes(result, "utf-8") + b"\r\n"
+        return b"$" + str(len(result)).encode() + b"\r\n" + bytes(result, "utf-8") + b"\r\n"
     return None
 
 
 def accept_connection(sock):
     conn, addr = sock.accept()
-    print(f"Accepted connection from {addr}")
 
     conn.setblocking(False)
     data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
@@ -100,3 +111,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    #parse_message("*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n".split("\r\n"))

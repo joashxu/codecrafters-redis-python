@@ -12,6 +12,7 @@ BUFFER_SIZE = 1024
 
 sel = selectors.DefaultSelector()
 
+DATA = {}
 
 def parse_message(messages):
     if messages[0][0] != "*":
@@ -38,13 +39,24 @@ def process_command(commands):
     if not commands:
         return None
     
-    if commands[0].lower() == "ping":
+    the_command = commands[0].lower()
+    if the_command.lower() == "ping":
         return "PONG"
-    elif commands[0].lower() == "echo":
+    elif the_command.lower() == "echo":
         if len(commands) == 1:
             return ""
         else:
             return commands[1]
+    elif the_command.lower() == "set":
+        if len(commands) < 3:
+            return ""
+        else:
+            DATA[commands[1]] = commands[2]
+            return "OK"
+    elif the_command.lower() == "get":
+        if len(commands) == 1:
+            return ""
+        return DATA.get(commands[1], "")
 
     return None
 
@@ -111,4 +123,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    #parse_message("*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n".split("\r\n"))
+
